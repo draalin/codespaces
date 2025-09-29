@@ -1,0 +1,62 @@
+{
+  "name": "Infra DevContainer",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "username": "vscode"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+  "github.copilot",
+        "github.copilot-chat",
+        "github.vscode-github-actions",
+        "hashicorp.terraform",
+        "ms-azuretools.vscode-docker",
+        "ms-vscode.vscode-speech",
+        "oderwat.indent-rainbow",
+        "streetsidesoftware.code-spell-checker",
+        "eamodio.gitlens",
+        "ms-python.python",
+        "esbenp.prettier-vscode",
+        "foxundermoon.shell-format",
+        "hediet.vscode-drawio",
+        "redhat.vscode-yaml",
+        "ms-vscode.makefile-tools",
+        "amazonwebservices.aws-toolkit-vscode",
+        "anthropic.claude-code",
+        "DavidAnson.vscode-markdownlint",
+        "Gruntfuggly.todo-tree",
+        "PKief.material-icon-theme"
+      ],
+      "settings": {
+        "terraform.codelens.enabled": true,
+        "files.trimTrailingWhitespace": true,
+        "editor.formatOnSave": true,
+  "editor.defaultFormatter": "hashicorp.terraform",
+        "editor.rulers": [100],
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.shellIntegration.enabled": true,
+        "workbench.startupEditor": "readme",
+        "aws.telemetry": false
+      }
+    }
+  },
+  "remoteUser": "vscode",
+  "containerUser": "vscode",
+  "postCreateCommand": "terraform -version && aws --version && tflint --version && terraform-docs --version && terragrunt --version && infracost --version || true",
+  "mounts": [
+    "source=${localEnv:HOME}/.aws,target=/home/vscode/.aws,type=bind,consistency=cached"
+  ],
+  "forwardPorts": [],
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "4gb",
+    "storage": "8gb"
+  }
+}

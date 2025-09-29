@@ -1,0 +1,44 @@
+# Terraform working directory
+.terraform/
+
+# Terraform state files
+*.tfstate
+*.tfstate.backup
+*.tfstate.*.backup
+terraform.tfstate.backup
+
+# Terraform dependency lock file (commit only if you intentionally vendor provider versions)
+.terraform.lock.hcl
+
+# Local variable & override patterns (never commit project-specific secrets/overrides)
+*.auto.tfvars
+*.auto.tfvars.json
+terraform.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# Local override files
+*.auto.tfvars
+*.auto.tfvars.json
+terraform.tfvars
+# Crash logs
+crash.log
+crash.*.log
+# Sensitive
+.secrets/
+.env
+# Infracost cache
+.infracost/
+
+# Plans / outputs
+plan.out
+plan.binary
+tfplan
+*.plan
+
+# Module build artifacts (if any custom build steps)
+dist/
+build/
+# Python/other
+__pycache__/

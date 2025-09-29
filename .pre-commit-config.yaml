@@ -1,0 +1,44 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: mixed-line-ending
+      - id: detect-private-key
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.88.0
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+      - id: terraform_tflint
+        args: ["--args=--enable-rule=terraform_unused_declarations"]
+      - id: terraform_docs
+        args: ["--hook-config=--output-file=README.md", "--hook-config=--sort-by=required"]
+      # Optional: uncomment to enable security scanner integrations when desired
+      # - id: terraform_checkov
+      # - id: terraform_tfsec
+  - repo: https://github.com/infracost/infracost
+    rev: v0.10.42
+    hooks:
+      - id: infracost_breakdown
+        args: ["--path=.", "--format=table"]
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline", "--fail-on-inline"]
+        exclude: ".*testdata.*"
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.2.6
+    hooks:
+      - id: codespell
+        args: ["--ignore-words-list=teh,behaviour"]
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.10.0
+    hooks:
+      - id: shellcheck
+        files: "scripts/.*\.sh$"
