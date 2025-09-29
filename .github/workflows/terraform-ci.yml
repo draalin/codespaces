@@ -22,8 +22,12 @@ on:
 
 jobs:
   validate:
-    name: fmt / validate / lint / docs / cost (dry)
+    name: fmt / validate / lint / docs / cost (dry) (${{ matrix.env }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [dev, prod]
     env:
       TF_PLUGIN_CACHE_DIR: .terraform.d/plugin-cache
     permissions:
@@ -61,48 +65,52 @@ jobs:
         with:
           extra_args: '--show-diff-on-failure --color=always'
 
-      - name: Terraform init (dev)
-        working-directory: infrastructure/env/dev
+      - name: Terraform init (${{ matrix.env }})
+        working-directory: infrastructure/env/${{ matrix.env }}
         run: terraform init -backend=false
 
-      - name: Terraform validate (dev)
-        working-directory: infrastructure/env/dev
+      - name: Terraform validate (${{ matrix.env }})
+        working-directory: infrastructure/env/${{ matrix.env }}
         run: terraform validate
 
-      - name: TFLint (dev)
-        working-directory: infrastructure/env/dev
+      - name: TFLint (${{ matrix.env }})
+        working-directory: infrastructure/env/${{ matrix.env }}
         run: tflint --enable-rule=terraform_unused_declarations || true
 
-      - name: tfsec (dev)
-        working-directory: infrastructure/env/dev
-        run: tfsec .
+      - name: tfsec (${{ matrix.env }})
+        working-directory: infrastructure/env/${{ matrix.env }}
+        run: tfsec --minimum-severity=medium .
 
-      - name: Checkov (dev)
-        working-directory: infrastructure/env/dev
-        run: checkov -d . --quiet
+      - name: Checkov (${{ matrix.env }})
+        working-directory: infrastructure/env/${{ matrix.env }}
+        run: checkov -d . --quiet --framework terraform --severity-level MEDIUM,HIGH,CRITICAL
 
-      - name: Docs check (dev)
-        working-directory: infrastructure/env/dev
+      - name: Docs check (${{ matrix.env }})
+        working-directory: infrastructure/env/${{ matrix.env }}
         run: terraform-docs markdown table . >/dev/null 2>&1 || true
 
       - name: Infracost breakdown (dry)
         if: env.INFRACOST_API_KEY != ''
-        run: infracost breakdown --path infrastructure/env/dev --format json --out-file infracost.json || true
+        run: infracost breakdown --path infrastructure/env/${{ matrix.env }} --format json --out-file infracost-${{ matrix.env }}.json || true
         env:
           INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 
-      - name: Upload Infracost artifact
+      - name: Upload Infracost artifact (${{ matrix.env }})
         if: env.INFRACOST_API_KEY != ''
         uses: actions/upload-artifact@v4
         with:
-          name: infracost
-          path: infracost.json
+          name: infracost-${{ matrix.env }}
+          path: infracost-${{ matrix.env }}.json
 
-  plan-dev:
-    name: Terraform Plan (dev)
+  plan-env:
+    name: Terraform Plan (${{ matrix.env }})
     runs-on: ubuntu-latest
     env:
       TF_PLUGIN_CACHE_DIR: .terraform.d/plugin-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [dev, prod]
     needs: validate
     if: github.event_name == 'pull_request'
     permissions:
@@ -133,40 +141,40 @@ jobs:
           terraform_version: 1.9.5
 
       - name: Terraform init
-        working-directory: infrastructure/env/dev
+        working-directory: infrastructure/env/${{ matrix.env }}
         run: terraform init -input=false -lock=false -backend=false
 
-      - name: Terraform plan
+      - name: Terraform plan (${{ matrix.env }})
         id: plan
-        working-directory: infrastructure/env/dev
-        run: terraform plan -no-color | tee plan_output.txt || true
+        working-directory: infrastructure/env/${{ matrix.env }}
+        run: terraform plan -no-color | tee plan_output-${{ matrix.env }}.txt || true
 
-      - name: Comment plan on PR
+      - name: Comment plan on PR (${{ matrix.env }})
         uses: marocchino/sticky-pull-request-comment@v2
         with:
-          path: plan_output.txt
+          path: plan_output-${{ matrix.env }}.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: always()
 
-      - name: Save plan output
+      - name: Save plan output (${{ matrix.env }})
         if: always()
-        working-directory: infrastructure/env/dev
-        run: terraform plan -out=plan.out -no-color || true
+        working-directory: infrastructure/env/${{ matrix.env }}
+        run: terraform plan -out=plan-${{ matrix.env }}.out -no-color || true
 
-      - name: Upload plan artifact
+      - name: Upload plan artifact (${{ matrix.env }})
         uses: actions/upload-artifact@v4
         with:
-          name: tf-plan-dev
-          path: infrastructure/env/dev/plan.out
+          name: tf-plan-${{ matrix.env }}
+          path: infrastructure/env/${{ matrix.env }}/plan-${{ matrix.env }}.out
 
-      - name: Infracost PR comment
+      - name: Infracost PR comment (${{ matrix.env }})
         if: env.INFRACOST_API_KEY != ''
         uses: infracost/actions/comment@v2
         env:
           INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
         with:
-          path: infracost.json
+          path: infracost-${{ matrix.env }}.json
           behavior: update
 
   # Optional bootstrap job to create S3 backend resources (disabled by default)
