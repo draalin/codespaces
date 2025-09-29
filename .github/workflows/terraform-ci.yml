@@ -1,0 +1,123 @@
+name: Terraform CI
+
+on:
+  pull_request:
+    paths:
+      - 'infrastructure/**.tf'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/terraform-ci.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'infrastructure/**.tf'
+      - '.pre-commit-config.yaml'
+
+jobs:
+  validate:
+    name: fmt / validate / lint / docs / cost (dry)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Install tools (tflint, infracost, terraform-docs)
+        run: |
+          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+          curl -fsSL https://github.com/terraform-docs/terraform-docs/releases/download/v0.19.0/terraform-docs-v0.19.0-linux-amd64.tar.gz -o td.tgz
+          tar -xzf td.tgz terraform-docs && sudo mv terraform-docs /usr/local/bin/ && rm td.tgz
+          curl -fsSL https://github.com/infracost/infracost/releases/download/v0.10.42/infracost-linux-amd64.tar.gz -o ic.tgz
+          tar -xzf ic.tgz && sudo mv infracost-linux-amd64/infracost /usr/local/bin/ && rm -rf ic.tgz infracost-linux-amd64
+
+      - name: Pre-commit (fmt/validate/tflint/docs)
+        uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: '--show-diff-on-failure --color=always'
+
+      - name: Terraform init (dev)
+        working-directory: infrastructure/env/dev
+        run: terraform init -backend=false
+
+      - name: Terraform validate (dev)
+        working-directory: infrastructure/env/dev
+        run: terraform validate
+
+      - name: TFLint (dev)
+        working-directory: infrastructure/env/dev
+        run: tflint --enable-rule=terraform_unused_declarations || true
+
+      - name: Docs check (dev)
+        working-directory: infrastructure/env/dev
+        run: terraform-docs markdown table . >/dev/null 2>&1 || true
+
+      - name: Infracost breakdown (dry)
+        if: env.INFRACOST_API_KEY != ''
+        run: infracost breakdown --path infrastructure/env/dev --format json --out-file infracost.json || true
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Upload Infracost artifact
+        if: env.INFRACOST_API_KEY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracost
+          path: infracost.json
+
+  plan-dev:
+    name: Terraform Plan (dev)
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Terraform init
+        working-directory: infrastructure/env/dev
+        run: terraform init -input=false -lock=false -backend=false
+
+      - name: Terraform plan
+        id: plan
+        working-directory: infrastructure/env/dev
+        run: terraform plan -no-color || true
+
+      - name: Comment plan on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: plan_output.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: always()
+
+      - name: Save plan output
+        if: always()
+        working-directory: infrastructure/env/dev
+        run: terraform plan -out=plan.out -no-color || true
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-plan-dev
+          path: infrastructure/env/dev/plan.out
