@@ -35,6 +35,8 @@ jobs:
           tar -xzf td.tgz terraform-docs && sudo mv terraform-docs /usr/local/bin/ && rm td.tgz
           curl -fsSL https://github.com/infracost/infracost/releases/download/v0.10.42/infracost-linux-amd64.tar.gz -o ic.tgz
           tar -xzf ic.tgz && sudo mv infracost-linux-amd64/infracost /usr/local/bin/ && rm -rf ic.tgz infracost-linux-amd64
+          curl -fsSL https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install-linux.sh | bash
+          pip install --no-cache-dir checkov
 
       - name: Pre-commit (fmt/validate/tflint/docs)
         uses: pre-commit/action@v3.0.1
@@ -52,6 +54,14 @@ jobs:
       - name: TFLint (dev)
         working-directory: infrastructure/env/dev
         run: tflint --enable-rule=terraform_unused_declarations || true
+
+      - name: tfsec (dev)
+        working-directory: infrastructure/env/dev
+        run: tfsec --soft-fail . || true
+
+      - name: Checkov (dev)
+        working-directory: infrastructure/env/dev
+        run: checkov -d . --quiet || true
 
       - name: Docs check (dev)
         working-directory: infrastructure/env/dev
@@ -101,7 +111,7 @@ jobs:
       - name: Terraform plan
         id: plan
         working-directory: infrastructure/env/dev
-        run: terraform plan -no-color || true
+        run: terraform plan -no-color | tee plan_output.txt || true
 
       - name: Comment plan on PR
         uses: marocchino/sticky-pull-request-comment@v2
@@ -121,3 +131,52 @@ jobs:
         with:
           name: tf-plan-dev
           path: infrastructure/env/dev/plan.out
+
+      - name: Infracost PR comment
+        if: env.INFRACOST_API_KEY != ''
+        uses: infracost/actions/comment@v2
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+        with:
+          path: infracost.json
+          behavior: update
+
+  # Optional bootstrap job to create S3 backend resources (disabled by default)
+  # Enable by dispatch or manual include of this job; keeps infra idempotent.
+  bootstrap-backend:
+    if: false  # change to github.event_name == 'workflow_dispatch' to allow manual use
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Create backend bucket/table if missing
+        run: |
+          set -euo pipefail
+          BUCKET="${STATE_BUCKET:-CHANGE_ME_STATE_BUCKET}"
+          DDB="${LOCK_TABLE:-CHANGE_ME_LOCK_TABLE}"
+          if ! aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+            echo "Creating state bucket $BUCKET";
+            aws s3api create-bucket --bucket "$BUCKET" --region us-east-1 --create-bucket-configuration LocationConstraint=us-east-1 || true
+            aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Enabled
+            aws s3api put-bucket-encryption --bucket "$BUCKET" --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+          else
+            echo "Bucket $BUCKET exists";
+          fi
+          if ! aws dynamodb describe-table --table-name "$DDB" >/dev/null 2>&1; then
+            echo "Creating lock table $DDB";
+            aws dynamodb create-table --table-name "$DDB" \
+              --attribute-definitions AttributeName=LockID,AttributeType=S \
+              --key-schema AttributeName=LockID,KeyType=HASH \
+              --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1
+            aws dynamodb wait table-exists --table-name "$DDB"
+          else
+            echo "Lock table $DDB exists";
+          fi
