@@ -74,4 +74,34 @@ show: ## Terraform show
 state-list: ## List state resources
 	$(TF) state list
 
-.PHONY: help init plan apply destroy fmt validate lint cost pre-commit-install pre-commit-run workspace-list workspace-select workspace-new show state-list
+# ------------------------------
+# Template Export / Scaffolding
+# ------------------------------
+
+TEMPLATE_FILES=.devcontainer .pre-commit-config.yaml Makefile scripts .gitignore README.md .env.example .secrets.baseline .github/workflows/terraform-ci.yml infrastructure/modules infrastructure/env
+
+export-template: ## Copy template tooling (no environment state) to TARGET=/path/to/dest (requires TARGET)
+	@if [ -z "$(TARGET)" ]; then echo "TARGET not set (usage: make export-template TARGET=../new-repo)" >&2; exit 1; fi
+	@mkdir -p $(TARGET)
+	@for item in $(TEMPLATE_FILES); do \
+	  rsync -a --exclude '*/.terraform/' --exclude '*.tfstate*' --exclude 'infrastructure/env/*/*.tfstate*' $$item $(TARGET)/ ; \
+	done
+	@echo "Template exported to $(TARGET). Review backend settings and update README badges." 
+
+scaffold-new: ## Initialize a new repo directory at TARGET with minimal env structure (dev only) (usage: make scaffold-new TARGET=../my-infra)
+	@if [ -z "$(TARGET)" ]; then echo "TARGET not set (usage: make scaffold-new TARGET=../my-infra)" >&2; exit 1; fi
+	@mkdir -p $(TARGET)
+	@rsync -a infrastructure/modules $(TARGET)/infrastructure/ 2>/dev/null || true
+	@mkdir -p $(TARGET)/infrastructure/env/dev
+	@if [ ! -f $(TARGET)/infrastructure/env/dev/main.tf ]; then \
+	  cat infrastructure/env/dev/main.tf | sed 's/CHANGE_ME_STATE_BUCKET/REPLACE_BUCKET/' | sed 's/CHANGE_ME_LOCK_TABLE/REPLACE_LOCK_TABLE/' > $(TARGET)/infrastructure/env/dev/main.tf; \
+	fi
+	@cp -n .env.example $(TARGET)/ 2>/dev/null || true
+	@cp -n .pre-commit-config.yaml $(TARGET)/ 2>/dev/null || true
+	@cp -n .gitignore $(TARGET)/ 2>/dev/null || true
+	@echo "Scaffold created at $(TARGET). Run: (cd $(TARGET)/infrastructure/env/dev && terraform init)"
+
+what-to-copy: ## Show list of files that constitute the reusable template
+	@echo "Template components:" && echo $(TEMPLATE_FILES) | tr ' ' '\n'
+
+.PHONY: help init plan apply destroy fmt validate lint cost pre-commit-install pre-commit-run workspace-list workspace-select workspace-new show state-list export-template scaffold-new what-to-copy
