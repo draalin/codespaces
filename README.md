@@ -1,5 +1,13 @@
 # Terraform Infrastructure & AI-Enabled Codespaces Template
 
+<!-- Badges -->
+![CI](https://github.com/draalin/codespaces/actions/workflows/terraform-ci.yml/badge.svg)
+![Security Scans](https://img.shields.io/badge/scans-tfsec%20%7C%20checkov-blueviolet)
+![Infracost](https://img.shields.io/badge/cost-Infracost-informational)
+![Terraform Version](https://img.shields.io/badge/terraform-1.9.5-623CE4)
+![License](https://img.shields.io/badge/license-CUSTOM-lightgrey)
+
+
 Purpose: Rapidly provision and iterate on AWS infrastructure using Terraform inside GitHub Codespaces with a pre-baked toolchain (Terraform/Terragrunt, linting, docs, cost estimation) plus integrated AI coding assistants (Copilot, Claude Code) and voice/speech features. Designed to be copied into new repos and immediately productive.
 
 ## Features
